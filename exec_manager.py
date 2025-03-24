@@ -87,11 +87,11 @@ class ExecManager:
             trader = self.traders[symbol]
             
             # 액션 타입에 따른 처리
-            if action == "OPEN":
+            if action == "open_position":
                 result = self._handle_open_position(trader, event_id, symbol, position_type, request_data)
-            elif action == "CLOSE":
+            elif action == "close_position":
                 result = self._handle_close_position(trader, event_id, symbol, request_data)
-            elif action == "TREND_TOUCH":
+            elif action == "trend_touch":
                 result = self._handle_trend_touch(trader, event_id, symbol, request_data)
             else:
                 return self._handle_error(event_id, f"지원하지 않는 액션: {action}")
@@ -158,7 +158,7 @@ class ExecManager:
                     "price": close_result["price"],
                     "leverage": current_position["leverage"],
                     "orderStatus": "FILLED",
-                    "bybitOrderId": close_result["order_id"],
+                    "bybitOrderId": close_result.get("order_id"),
                     "executionTime": datetime.now()
                 })
             
@@ -247,7 +247,7 @@ class ExecManager:
                 "price": close_result["price"],
                 "leverage": current_position["leverage"],
                 "orderStatus": "FILLED",
-                "bybitOrderId": close_result["order_id"],
+                "bybitOrderId": close_result.get("order_id"),
                 "executionTime": datetime.now()
             })
             
@@ -307,7 +307,7 @@ class ExecManager:
                 "price": close_result["price"],
                 "leverage": current_position["leverage"],
                 "orderStatus": "FILLED",
-                "bybitOrderId": close_result["order_id"],
+                "bybitOrderId": close_result.get("order_id"),
                 "additionalInfo": json.dumps({"reason": "trend_touch", "ai_decision": ai_decision}),
                 "executionTime": datetime.now()
             })

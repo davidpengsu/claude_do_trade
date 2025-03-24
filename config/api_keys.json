@@ -1,0 +1,16 @@
+{
+    "bybit_api": {
+        "BTC": {
+            "key": "your-btc-api-key",
+            "secret": "your-btc-api-secret"
+        },
+        "ETH": {
+            "key": "your-eth-api-key",
+            "secret": "your-eth-api-secret"
+        },
+        "SOL": {
+            "key": "your-sol-api-key",
+            "secret": "your-sol-api-secret"
+        }
+    }
+}
