@@ -1,0 +1,21 @@
+{
+    "leverage": {
+      "BTCUSDT": 5,
+      "ETHUSDT": 5,
+      "SOLUSDT": 5
+    },
+    "position_size": {
+      "mode": "fixed",   
+      "percent": 10.0,      
+      "fixed": 100.0        
+    },
+    "risk_management": {
+      "trend_touch_percent": 3.0,    
+      "sl_percent": 1.5     
+    },
+    "execution": {
+      "max_retries": 3,     
+      "retry_delay": 1.5,   
+      "order_timeout": 10   
+    }
+  }
