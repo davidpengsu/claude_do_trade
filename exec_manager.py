@@ -13,6 +13,13 @@ from config_loader import ConfigLoader
 # 로그 설정
 logger = logging.getLogger("exec_manager")
 
+# 거래 상태 상수
+TRADE_STATUS_OPEN = "OPEN"       # 포지션 오픈 상태
+TRADE_STATUS_FILLED = "FILLED"   # 주문 체결 완료
+TRADE_STATUS_CLOSED = "CLOSED"   # 포지션 청산됨
+TRADE_STATUS_CANCELED = "CANCELED"  # 주문 취소됨
+TRADE_STATUS_REJECTED = "REJECTED"  # 주문 거부됨
+
 class ExecManager:
     """
     거래 실행 관리 클래스
@@ -147,8 +154,9 @@ class ExecManager:
                     }
                 
                 # 포지션 청산 거래 기록
+                trade_id = str(uuid.uuid4())
                 self.db_manager.log_trade({
-                    "tradeId": str(uuid.uuid4()),
+                    "tradeId": trade_id,
                     "eventId": event_id,
                     "symbol": symbol,
                     "orderType": "MARKET",
@@ -157,10 +165,20 @@ class ExecManager:
                     "quantity": current_position["size"],
                     "price": close_result["price"],
                     "leverage": current_position["leverage"],
-                    "orderStatus": "FILLED",
+                    "orderStatus": TRADE_STATUS_FILLED,
                     "bybitOrderId": close_result.get("order_id"),
                     "executionTime": datetime.now()
                 })
+                
+                # 기존 거래 상태 업데이트
+                try:
+                    # 해당 거래 상태 업데이트
+                    with self.db_manager.conn.cursor() as cursor:
+                        cursor.execute("UPDATE trades SET orderStatus = %s WHERE symbol = %s AND positionType = %s AND orderStatus = %s", 
+                                     [TRADE_STATUS_CLOSED, symbol, current_position["position_type"], TRADE_STATUS_OPEN])
+                        self.db_manager.conn.commit()
+                except Exception as e:
+                    logger.warning(f"이전 거래 상태 업데이트 중 오류 발생: {e}")
             
             # 새 포지션 진입
             open_result = trader.open_position(position_type)
@@ -182,8 +200,9 @@ class ExecManager:
                     logger.warning(f"TP/SL 설정 실패: {tp_sl_result['message']}")
             
             # 거래 기록
+            trade_id = str(uuid.uuid4())
             self.db_manager.log_trade({
-                "tradeId": str(uuid.uuid4()),
+                "tradeId": trade_id,
                 "eventId": event_id,
                 "symbol": symbol,
                 "orderType": "MARKET",
@@ -192,9 +211,9 @@ class ExecManager:
                 "quantity": open_result["size"],
                 "price": open_result["entry_price"],
                 "leverage": open_result["leverage"],
-                "takeProfit": open_result.get("take_profit"),
-                "stopLoss": open_result.get("stop_loss"),
-                "orderStatus": "FILLED",
+                "takeProfit": tp_sl_result.get("take_profit") if open_result["success"] and tp_sl_result["success"] else None,
+                "stopLoss": tp_sl_result.get("stop_loss") if open_result["success"] and tp_sl_result["success"] else None,
+                "orderStatus": TRADE_STATUS_OPEN,  # 여기를 OPEN으로 변경
                 "bybitOrderId": open_result["order_id"],
                 "executionTime": datetime.now()
             })
@@ -236,8 +255,9 @@ class ExecManager:
                 }
             
             # 거래 기록
+            trade_id = str(uuid.uuid4())
             self.db_manager.log_trade({
-                "tradeId": str(uuid.uuid4()),
+                "tradeId": trade_id,
                 "eventId": event_id,
                 "symbol": symbol,
                 "orderType": "MARKET",
@@ -246,10 +266,20 @@ class ExecManager:
                 "quantity": current_position["size"],
                 "price": close_result["price"],
                 "leverage": current_position["leverage"],
-                "orderStatus": "FILLED",
+                "orderStatus": TRADE_STATUS_FILLED,
                 "bybitOrderId": close_result.get("order_id"),
                 "executionTime": datetime.now()
             })
+            
+            # 기존 거래 상태 업데이트
+            try:
+                # 해당 거래 상태 업데이트
+                with self.db_manager.conn.cursor() as cursor:
+                    cursor.execute("UPDATE trades SET orderStatus = %s WHERE symbol = %s AND positionType = %s AND orderStatus = %s", 
+                                 [TRADE_STATUS_CLOSED, symbol, current_position["position_type"], TRADE_STATUS_OPEN])
+                    self.db_manager.conn.commit()
+            except Exception as e:
+                logger.warning(f"거래 상태 업데이트 중 오류 발생: {e}")
             
             return {
                 "status": "SUCCESS",
@@ -296,8 +326,9 @@ class ExecManager:
                 }
             
             # 거래 기록
+            trade_id = str(uuid.uuid4())
             self.db_manager.log_trade({
-                "tradeId": str(uuid.uuid4()),
+                "tradeId": trade_id,
                 "eventId": event_id,
                 "symbol": symbol,
                 "orderType": "MARKET",
@@ -306,11 +337,21 @@ class ExecManager:
                 "quantity": current_position["size"],
                 "price": close_result["price"],
                 "leverage": current_position["leverage"],
-                "orderStatus": "FILLED",
+                "orderStatus": TRADE_STATUS_FILLED,
                 "bybitOrderId": close_result.get("order_id"),
                 "additionalInfo": json.dumps({"reason": "trend_touch", "ai_decision": ai_decision}),
                 "executionTime": datetime.now()
             })
+            
+            # 기존 거래 상태 업데이트
+            try:
+                # 해당 거래 상태 업데이트
+                with self.db_manager.conn.cursor() as cursor:
+                    cursor.execute("UPDATE trades SET orderStatus = %s WHERE symbol = %s AND positionType = %s AND orderStatus = %s", 
+                                 [TRADE_STATUS_CLOSED, symbol, current_position["position_type"], TRADE_STATUS_OPEN])
+                    self.db_manager.conn.commit()
+            except Exception as e:
+                logger.warning(f"거래 상태 업데이트 중 오류 발생: {e}")
             
             return {
                 "status": "SUCCESS",

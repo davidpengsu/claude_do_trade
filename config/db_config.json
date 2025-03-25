@@ -1,7 +1,7 @@
 {
     "host": "localhost",
     "user": "root",
-    "password": "your-db-password",
+    "password": "center",
     "database": "execution_data",
     "port": 3306
 }

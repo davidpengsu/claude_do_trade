@@ -163,6 +163,7 @@ class ExecDBManager:
             self.conn.rollback()
             return False
     
+        
     def get_opened_trades(self) -> List[tuple]:
         """
         진행 중인 거래 목록 조회
@@ -174,8 +175,9 @@ class ExecDBManager:
         
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute("SELECT orderId FROM trades WHERE status = 'Open'")
-                return [(row['orderId'],) for row in cursor.fetchall()]
+                # 필드명과 상태값 수정
+                cursor.execute("SELECT bybitOrderId FROM trades WHERE orderStatus = 'OPEN'")
+                return [(row['bybitOrderId'],) for row in cursor.fetchall()]
         except Exception as e:
             self.logger.error(f"미완료 거래 조회 중 오류 발생: {e}")
             return []
