@@ -5,7 +5,7 @@ import time
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
-
+import threading 
 from bybit_trader import BybitTrader
 from exec_db_manager import ExecDBManager
 from config_loader import ConfigLoader
@@ -270,6 +270,10 @@ class ExecManager:
                 "bybitOrderId": close_result.get("order_id"),
                 "executionTime": datetime.now()
             })
+
+            # PnL 정보 지연 업데이트를 위한 타이머 시작
+            threading.Timer(30.0, lambda: self._update_trade_pnl(trade_id, symbol, close_result.get("order_id"))).start()
+            logger.info(f"PnL 정보 지연 업데이트 예약됨 (30초 후): {trade_id}")
             
             # 기존 거래 상태 업데이트
             try:
@@ -293,7 +297,109 @@ class ExecManager:
                 "status": "FAILED",
                 "message": f"포지션 청산 중 오류 발생: {str(e)}"
             }
-    
+        
+    def _update_trade_pnl(self, trade_id: str, symbol: str, order_id: str):
+        """
+        특정 거래의 PnL 정보 업데이트
+        
+        Args:
+            trade_id: 거래 ID (CLOSED 상태의 거래 ID)
+            symbol: 심볼
+            order_id: 바이비트 주문 ID
+        """
+        try:
+            if symbol not in self.traders:
+                logger.warning(f"트레이더를 찾을 수 없음: {symbol}")
+                return
+                
+            trader = self.traders[symbol]
+            
+            # PnL 정보 조회
+            pnl_info = trader.client.get_closed_pnl(symbol, order_id)
+            
+            if not pnl_info or pnl_info.get("realized_pnl") == 0:
+                logger.warning(f"거래 {trade_id}의 PnL 정보를 아직 가져올 수 없음, 나중에 재시도")
+                # 5초 후 한 번 더 시도
+                threading.Timer(5.0, lambda: self._update_trade_pnl(trade_id, symbol, order_id)).start()
+                return
+            
+            # PnL 업데이트 - 직접 거래 ID에 업데이트
+            self.db_manager._ensure_connection()
+            with self.db_manager.conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE trades SET pnl = %s WHERE tradeId = %s",
+                    [pnl_info["realized_pnl"], trade_id]
+                )
+                
+            self.db_manager.conn.commit()
+            logger.info(f"거래 ID {trade_id}의 PnL 정보 업데이트 완료: {pnl_info['realized_pnl']}")
+            
+        except Exception as e:
+            logger.error(f"PnL 정보 업데이트 중 오류 발생: {e}")
+
+    def update_missing_pnl(self):
+        """
+        NULL 상태의 PnL 정보 일괄 업데이트
+        
+        CLOSED 상태지만 PnL이 NULL인 거래들을 찾아서 업데이트
+        """
+        try:
+            # DB 연결 확인
+            self.db_manager._ensure_connection()
+            
+            # NULL PnL을 가진 CLOSED 거래들 조회
+            with self.db_manager.conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT tradeId, symbol, bybitOrderId FROM trades WHERE orderStatus = %s AND pnl IS NULL",
+                    [TRADE_STATUS_CLOSED]
+                )
+                null_pnl_trades = cursor.fetchall()
+            
+            if not null_pnl_trades:
+                logger.info("업데이트할 NULL PnL 거래가 없습니다.")
+                return {"status": "success", "count": 0, "message": "업데이트할 거래가 없습니다."}
+            
+            update_count = 0
+            for trade in null_pnl_trades:
+                symbol = trade["symbol"]
+                trade_id = trade["tradeId"]
+                order_id = trade["bybitOrderId"]
+                
+                if not order_id or symbol not in self.traders:
+                    continue
+                    
+                # 해당 심볼의 트레이더 가져오기
+                trader = self.traders[symbol]
+                
+                # PnL 정보 조회
+                pnl_info = trader.client.get_closed_pnl(symbol, order_id)
+                
+                if pnl_info and pnl_info["realized_pnl"] != 0:
+                    # PnL 업데이트
+                    with self.db_manager.conn.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE trades SET pnl = %s WHERE tradeId = %s",
+                            [pnl_info["realized_pnl"], trade_id]
+                        )
+                    
+                    self.db_manager.conn.commit()
+                    update_count += 1
+                    logger.info(f"거래 ID {trade_id} PnL 업데이트: {pnl_info['realized_pnl']}")
+                
+                # API 요청 간 간격
+                time.sleep(0.3)
+            
+            return {
+                "status": "success",
+                "count": update_count,
+                "message": f"{update_count}개 거래의 PnL 정보 업데이트 완료"
+            }
+            
+        except Exception as e:
+            logger.exception(f"NULL PnL 업데이트 중 오류 발생: {e}")
+            return {"status": "error", "message": str(e)}
+
+
     def _handle_trend_touch(self, trader, event_id, symbol, request_data):
         """추세선 터치 처리 (추세선 터치로 인한 청산)"""
         logger.info(f"{symbol} 추세선 터치 요청 처리")
@@ -343,6 +449,10 @@ class ExecManager:
                 "executionTime": datetime.now()
             })
             
+            # PnL 정보 지연 업데이트를 위한 타이머 시작
+            threading.Timer(30.0, lambda: self._update_trade_pnl(trade_id, symbol, close_result.get("order_id"))).start()
+            logger.info(f"PnL 정보 지연 업데이트 예약됨 (30초 후): {trade_id}")
+
             # 기존 거래 상태 업데이트
             try:
                 # 해당 거래 상태 업데이트

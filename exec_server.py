@@ -191,6 +191,25 @@ def positions():
             "status": "error",
             "message": f"포지션 조회 중 오류 발생: {str(e)}"
         }), 500
+    
+@app.route('/update-missing-pnl', methods=['POST'])
+def update_missing_pnl():
+    """
+    NULL PnL 정보 업데이트 엔드포인트
+    """
+    try:
+        # API 키 검증 (생략)
+        
+        # NULL PnL 업데이트 실행
+        result = exec_manager.update_missing_pnl()
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.exception(f"NULL PnL 업데이트 중 오류 발생: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"오류 발생: {str(e)}"
+        }), 500
 
 @app.route('/settings', methods=['GET'])
 def settings():

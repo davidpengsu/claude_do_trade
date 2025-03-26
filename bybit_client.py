@@ -285,6 +285,45 @@ class BybitClient:
         except Exception as e:
             self.logger.error(f"{symbol} 포지션 청산 중 오류 발생: {e}")
             return False
+        
+    def get_closed_pnl(self, symbol: str, order_id: str = None) -> Dict[str, Any]:
+        """
+        특정 주문 ID의 PnL 정보 조회
+        
+        Args:
+            symbol: 심볼 (예: "BTCUSDT")
+            order_id: 주문 ID (선택 사항)
+            
+        Returns:
+            PnL 정보를 포함한 응답
+        """
+        params = {
+            "category": "linear",
+            "symbol": symbol
+        }
+        
+        if order_id:
+            params["orderId"] = order_id
+        
+        response = self._send_get_request("/v5/position/closed-pnl", params, True)
+        
+        if response.get("retCode") == 0:
+            results = response.get("result", {}).get("list", [])
+            if results:
+                result = results[0]
+                return {
+                    "realized_pnl": self.safe_float_conversion(result.get("closedPnl", 0)),
+                    "entry_price": self.safe_float_conversion(result.get("avgEntryPrice", 0)),
+                    "exit_price": self.safe_float_conversion(result.get("avgExitPrice", 0)),
+                    "closed_time": result.get("updatedTime", 0)
+                }
+        
+        return {
+            "realized_pnl": 0.0,
+            "entry_price": 0.0,
+            "exit_price": 0.0,
+            "closed_time": 0
+        }
     
     def cancel_all_orders(self, symbol: str) -> bool:
         """

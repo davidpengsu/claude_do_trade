@@ -1,7 +1,7 @@
 {
     "position_size_mode": "fixed",
     "position_size_percent": 10.0,
-    "position_size_fixed": 100.0,
+    "position_size_fixed": 30.0,
     "leverage": 5,
     "tp_percent": 3.0,
     "sl_percent": 1.5,
