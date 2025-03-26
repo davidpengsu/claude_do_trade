@@ -247,7 +247,7 @@ class BybitClient:
         
         return self._send_post_request("/v5/position/set-leverage", params)
     
-    def close_position(self, symbol: str) -> bool:
+    def close_position(self, symbol: str) -> Dict[str, Any]:
         """
         포지션 청산
         
@@ -255,14 +255,14 @@ class BybitClient:
             symbol: 심볼 (예: "BTCUSDT")
             
         Returns:
-            성공 여부
+            성공 여부와 주문 정보를 포함한 딕셔너리
         """
         # 현재 포지션 조회
         position = self.get_positions(symbol)
         
         if not position.get("exists", False):
             self.logger.info(f"{symbol} 포지션이 없습니다.")
-            return True
+            return {"success": True, "message": "포지션이 없습니다."}
         
         # 포지션 방향의 반대 방향으로 시장가 주문
         side = "Sell" if position.get("side") == "Buy" else "Buy"
@@ -277,18 +277,33 @@ class BybitClient:
             )
             
             if result.get("retCode") == 0:
-                self.logger.info(f"{symbol} 포지션 청산 성공")
-                return True
+                # 주문 ID 추출
+                order_id = result.get("result", {}).get("orderId")
+                self.logger.info(f"{symbol} 포지션 청산 성공, 주문 ID: {order_id}")
+                return {
+                    "success": True, 
+                    "message": f"{symbol} 포지션 청산 성공",
+                    "order_id": order_id
+                }
             else:
                 self.logger.error(f"{symbol} 포지션 청산 실패: {result}")
-                return False
+                return {
+                    "success": False,
+                    "message": f"{symbol} 포지션 청산 실패: {result.get('retMsg', '알 수 없는 오류')}"
+                }
         except Exception as e:
             self.logger.error(f"{symbol} 포지션 청산 중 오류 발생: {e}")
-            return False
+            return {
+                "success": False,
+                "message": f"{symbol} 포지션 청산 중 오류 발생: {str(e)}"
+            }
         
     def get_closed_pnl(self, symbol: str, order_id: str = None) -> Dict[str, Any]:
         """
         특정 주문 ID의 PnL 정보 조회
+        
+        최근 20개의 PnL 정보를 가져와서 주문 ID로 필터링합니다.
+        API 직접 필터링 대신 클라이언트 측에서 필터링하여 더 안정적으로 작동합니다.
         
         Args:
             symbol: 심볼 (예: "BTCUSDT")
@@ -297,27 +312,67 @@ class BybitClient:
         Returns:
             PnL 정보를 포함한 응답
         """
+        # 기본 파라미터 - 항상 최근 20개 조회
         params = {
             "category": "linear",
-            "symbol": symbol
+            "symbol": symbol,
+            "limit": 20
         }
         
-        if order_id:
-            params["orderId"] = order_id
+        self.logger.info(f"PnL 조회 요청: 심볼={symbol}" + (f", 주문ID={order_id}" if order_id else ""))
         
+        # API 요청 실행
         response = self._send_get_request("/v5/position/closed-pnl", params, True)
         
         if response.get("retCode") == 0:
             results = response.get("result", {}).get("list", [])
-            if results:
-                result = results[0]
+            
+            if not results:
+                self.logger.warning(f"심볼 {symbol}에 대한 PnL 정보가 없습니다.")
                 return {
-                    "realized_pnl": self.safe_float_conversion(result.get("closedPnl", 0)),
-                    "entry_price": self.safe_float_conversion(result.get("avgEntryPrice", 0)),
-                    "exit_price": self.safe_float_conversion(result.get("avgExitPrice", 0)),
-                    "closed_time": result.get("updatedTime", 0)
+                    "realized_pnl": 0.0,
+                    "entry_price": 0.0,
+                    "exit_price": 0.0,
+                    "closed_time": 0
                 }
+            
+            # 주문 ID가 제공된 경우 매칭되는 항목 찾기
+            if order_id:
+                matching_result = None
+                for item in results:
+                    if item.get("orderId") == order_id:
+                        matching_result = item
+                        break
+                        
+                if matching_result:
+                    # 매칭되는 PnL 정보 반환
+                    self.logger.info(f"주문 ID {order_id}에 대한 PnL 정보 찾음.")
+                    return {
+                        "realized_pnl": self.safe_float_conversion(matching_result.get("closedPnl", 0)),
+                        "entry_price": self.safe_float_conversion(matching_result.get("avgEntryPrice", 0)),
+                        "exit_price": self.safe_float_conversion(matching_result.get("avgExitPrice", 0)),
+                        "closed_time": matching_result.get("updatedTime", 0)
+                    }
+                else:
+                    self.logger.warning(f"주문 ID {order_id}에 대한 PnL 정보를 찾을 수 없습니다.")
+                    return {
+                        "realized_pnl": 0.0,
+                        "entry_price": 0.0,
+                        "exit_price": 0.0,
+                        "closed_time": 0
+                    }
+            
+            # 주문 ID가 제공되지 않은 경우 첫 번째 결과 반환
+            result = results[0]
+            return {
+                "realized_pnl": self.safe_float_conversion(result.get("closedPnl", 0)),
+                "entry_price": self.safe_float_conversion(result.get("avgEntryPrice", 0)),
+                "exit_price": self.safe_float_conversion(result.get("avgExitPrice", 0)),
+                "closed_time": result.get("updatedTime", 0)
+            }
         
+        # API 오류 처리
+        self.logger.error(f"PnL 정보 조회 실패: {response}")
         return {
             "realized_pnl": 0.0,
             "entry_price": 0.0,

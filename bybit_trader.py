@@ -160,10 +160,10 @@ class BybitTrader:
             # 포지션 청산
             close_result = self.client.close_position(self.symbol)
             
-            if not close_result:
+            if not close_result.get("success", False):
                 return {
                     "success": False,
-                    "message": "포지션 청산 실패",
+                    "message": close_result.get("message", "포지션 청산 실패"),
                     "order_id": None
                 }
             
@@ -176,7 +176,8 @@ class BybitTrader:
             return {
                 "success": True,
                 "message": f"{self.symbol} 포지션 청산 성공",
-                "price": current_price
+                "price": current_price,
+                "order_id": close_result.get("order_id")  # 주문 ID 전달
             }
             
         except Exception as e:

@@ -255,6 +255,11 @@ class ExecManager:
                 }
             
             # 거래 기록
+            # 주문 ID 가져오기
+            order_id = close_result.get("order_id")
+            logger.info(f"포지션 청산 주문 ID: {order_id}")
+
+            # 거래 기록
             trade_id = str(uuid.uuid4())
             self.db_manager.log_trade({
                 "tradeId": trade_id,
@@ -267,7 +272,7 @@ class ExecManager:
                 "price": close_result["price"],
                 "leverage": current_position["leverage"],
                 "orderStatus": TRADE_STATUS_FILLED,
-                "bybitOrderId": close_result.get("order_id"),
+                "bybitOrderId": order_id,  # 변수로 명시적 사용
                 "executionTime": datetime.now()
             })
 
@@ -298,107 +303,201 @@ class ExecManager:
                 "message": f"포지션 청산 중 오류 발생: {str(e)}"
             }
         
-    def _update_trade_pnl(self, trade_id: str, symbol: str, order_id: str):
+    def _update_trade_pnl(self, trade_id: str = None, symbol: str = None, order_id: str = None):
         """
-        특정 거래의 PnL 정보 업데이트
+        거래의 PnL 정보 업데이트 - 직접 API 키를 사용하는 단순 버전
+        
+        문제를 해결하기 위해 직접 API 요청을 수행하는 방식으로 변경했습니다.
+        각 심볼에 맞는 API 키를 직접 사용하여 PnL 정보를 조회합니다.
         
         Args:
-            trade_id: 거래 ID (CLOSED 상태의 거래 ID)
-            symbol: 심볼
-            order_id: 바이비트 주문 ID
+            trade_id: (선택) 특정 거래 ID
+            symbol: (선택) 심볼
+            order_id: (선택) 바이비트 주문 ID
         """
         try:
-            if symbol not in self.traders:
-                logger.warning(f"트레이더를 찾을 수 없음: {symbol}")
-                return
-                
-            trader = self.traders[symbol]
+            import requests
+            import time
+            import hmac
+            import hashlib
             
-            # PnL 정보 조회
-            pnl_info = trader.client.get_closed_pnl(symbol, order_id)
-            
-            if not pnl_info or pnl_info.get("realized_pnl") == 0:
-                logger.warning(f"거래 {trade_id}의 PnL 정보를 아직 가져올 수 없음, 나중에 재시도")
-                # 5초 후 한 번 더 시도
-                threading.Timer(5.0, lambda: self._update_trade_pnl(trade_id, symbol, order_id)).start()
-                return
-            
-            # PnL 업데이트 - 직접 거래 ID에 업데이트
-            self.db_manager._ensure_connection()
-            with self.db_manager.conn.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE trades SET pnl = %s WHERE tradeId = %s",
-                    [pnl_info["realized_pnl"], trade_id]
-                )
-                
-            self.db_manager.conn.commit()
-            logger.info(f"거래 ID {trade_id}의 PnL 정보 업데이트 완료: {pnl_info['realized_pnl']}")
-            
-        except Exception as e:
-            logger.error(f"PnL 정보 업데이트 중 오류 발생: {e}")
-
-    def update_missing_pnl(self):
-        """
-        NULL 상태의 PnL 정보 일괄 업데이트
-        
-        CLOSED 상태지만 PnL이 NULL인 거래들을 찾아서 업데이트
-        """
-        try:
             # DB 연결 확인
             self.db_manager._ensure_connection()
             
-            # NULL PnL을 가진 CLOSED 거래들 조회
+            # 업데이트가 필요한 거래 목록을 가져옵니다
             with self.db_manager.conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT tradeId, symbol, bybitOrderId FROM trades WHERE orderStatus = %s AND pnl IS NULL",
-                    [TRADE_STATUS_CLOSED]
-                )
-                null_pnl_trades = cursor.fetchall()
-            
-            if not null_pnl_trades:
-                logger.info("업데이트할 NULL PnL 거래가 없습니다.")
-                return {"status": "success", "count": 0, "message": "업데이트할 거래가 없습니다."}
-            
-            update_count = 0
-            for trade in null_pnl_trades:
-                symbol = trade["symbol"]
-                trade_id = trade["tradeId"]
-                order_id = trade["bybitOrderId"]
+                if trade_id and symbol and order_id:
+                    # 특정 거래만 조회
+                    cursor.execute(
+                        "SELECT tradeId, symbol, bybitOrderId FROM trades WHERE tradeId = %s",
+                        [trade_id]
+                    )
+                else:
+                    # FILLED 상태이고 PnL이 NULL인 모든 거래 조회
+                    cursor.execute(
+                        "SELECT tradeId, symbol, bybitOrderId FROM trades WHERE orderStatus = %s AND pnl IS NULL",
+                        [TRADE_STATUS_FILLED]
+                    )
                 
-                if not order_id or symbol not in self.traders:
+                trades_to_update = cursor.fetchall()
+            
+            if not trades_to_update:
+                logger.info("업데이트할 거래가 없습니다.")
+                return
+            
+            # 심볼별로 거래 그룹화
+            trades_by_symbol = {}
+            for trade in trades_to_update:
+                trade_symbol = trade["symbol"]
+                if trade_symbol not in trades_by_symbol:
+                    trades_by_symbol[trade_symbol] = []
+                trades_by_symbol[trade_symbol].append(trade)
+            
+            # 각 심볼에 대해 처리
+            for symbol, trades in trades_by_symbol.items():
+                # 직접 API 키 가져오기
+                coin_base = symbol.replace("USDT", "")  # 예: ETHUSDT -> ETH
+                api_config = self.config.get_bybit_api_key(symbol)
+                
+                api_key = api_config.get("key", "")
+                api_secret = api_config.get("secret", "")
+                
+                if not api_key or not api_secret:
+                    logger.error(f"{symbol}에 대한 API 키가 설정되지 않았습니다.")
                     continue
                     
-                # 해당 심볼의 트레이더 가져오기
-                trader = self.traders[symbol]
+                logger.info(f"{symbol} API 키 사용: {api_key[:4]}...{api_key[-4:]}")
                 
-                # PnL 정보 조회
-                pnl_info = trader.client.get_closed_pnl(symbol, order_id)
-                
-                if pnl_info and pnl_info["realized_pnl"] != 0:
-                    # PnL 업데이트
-                    with self.db_manager.conn.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE trades SET pnl = %s WHERE tradeId = %s",
-                            [pnl_info["realized_pnl"], trade_id]
-                        )
+                # 직접 API 호출 함수
+                def get_closed_pnl(symbol, order_id=None):
+                    # 바이비트 API 기본 URL
+                    base_url = "https://api.bybit.com"
                     
-                    self.db_manager.conn.commit()
-                    update_count += 1
-                    logger.info(f"거래 ID {trade_id} PnL 업데이트: {pnl_info['realized_pnl']}")
+                    # 종료된 PnL API 엔드포인트
+                    endpoint = "/v5/position/closed-pnl"
+                    
+                    # 요청 파라미터
+                    params = {
+                        "category": "linear",
+                        "symbol": symbol,
+                        "limit": 20
+                    }
+                    
+                    # 현재 타임스탬프 (밀리초)
+                    timestamp = str(int(time.time() * 1000))
+                    recv_window = "5000"
+                    
+                    # 파라미터를 알파벳 순으로 정렬
+                    sorted_params = sorted(params.items())
+                    query_string = "&".join([f"{key}={value}" for key, value in sorted_params])
+                    
+                    # 서명 생성
+                    signature_payload = f"{timestamp}{api_key}{recv_window}{query_string}"
+                    signature = hmac.new(
+                        api_secret.encode("utf-8"),
+                        signature_payload.encode("utf-8"),
+                        hashlib.sha256
+                    ).hexdigest()
+                    
+                    # 헤더 설정
+                    headers = {
+                        "X-BAPI-API-KEY": api_key,
+                        "X-BAPI-SIGN": signature,
+                        "X-BAPI-TIMESTAMP": timestamp,
+                        "X-BAPI-RECV-WINDOW": recv_window
+                    }
+                    
+                    # API 요청 실행
+                    url = f"{base_url}{endpoint}?{query_string}"
+                    try:
+                        logger.info(f"PnL 조회 요청: URL={url}, 헤더={headers}")
+                        response = requests.get(url, headers=headers)
+                        
+                        if response.status_code == 200:
+                            return response.json()
+                        else:
+                            logger.error(f"API 요청 실패: {response.status_code} - {response.text}")
+                            return {"error": response.status_code, "message": response.text}
+                    except Exception as e:
+                        logger.error(f"API 요청 중 오류 발생: {e}")
+                        return {"error": "request_failed", "message": str(e)}
+                
+                # 심볼에 맞는 API 키로 PnL 정보 조회
+                api_response = get_closed_pnl(symbol)
+                
+                if "error" in api_response:
+                    logger.error(f"{symbol} PnL 정보 조회 실패: {api_response}")
+                    continue
+                
+                # 응답 확인
+                if api_response.get("retCode") != 0:
+                    logger.error(f"{symbol} PnL 정보 조회 실패: {api_response}")
+                    continue
+                
+                # PnL 목록
+                pnl_list = api_response.get("result", {}).get("list", [])
+                
+                if not pnl_list:
+                    logger.warning(f"{symbol}에 대한 PnL 정보가 없습니다.")
+                    continue
+                
+                # PnL 정보 디버깅
+                logger.info(f"{symbol} PnL 목록: {pnl_list}")
+                
+                # 업데이트된 거래 ID를 추적하기 위한 집합
+                updated_trade_ids = set()
+                
+                # 각 거래에 대해 매칭되는 PnL 정보를 찾아 업데이트
+                for trade in trades:
+                    trade_id = trade["tradeId"]
+                    order_id = trade["bybitOrderId"]
+                    
+                    if not order_id:
+                        logger.warning(f"거래 ID {trade_id}에 주문 ID가 없습니다.")
+                        continue
+                    
+                    logger.info(f"주문 ID로 PnL 검색: {order_id}")
+                    
+                    # 주문 ID로 매칭되는 PnL 정보 찾기
+                    matching_pnl = None
+                    for pnl_item in pnl_list:
+                        logger.info(f"PnL 항목: {pnl_item}")
+                        if pnl_item.get("orderId") == order_id:
+                            matching_pnl = pnl_item
+                            logger.info(f"매칭되는 PnL 항목 발견: {matching_pnl}")
+                            break
+                    
+                    if matching_pnl:
+                        # PnL 정보 추출
+                        pnl_value = float(matching_pnl.get("closedPnl", 0))
+                        entry_price = float(matching_pnl.get("avgEntryPrice", 0))
+                        exit_price = float(matching_pnl.get("avgExitPrice", 0))
+                        
+                        # DB 업데이트
+                        with self.db_manager.conn.cursor() as cursor:
+                            cursor.execute(
+                                "UPDATE trades SET pnl = %s, additionalInfo = JSON_SET(COALESCE(additionalInfo, '{}'), '$.entry_price', %s, '$.exit_price', %s) WHERE tradeId = %s",
+                                [pnl_value, entry_price, exit_price, trade_id]
+                            )
+                        
+                        self.db_manager.conn.commit()
+                        logger.info(f"거래 ID {trade_id} PnL 업데이트 완료: {pnl_value}")
+                        
+                        # 업데이트된 거래 ID 추가
+                        updated_trade_ids.add(trade_id)
+                    else:
+                        logger.warning(f"거래 ID {trade_id}, 주문 ID {order_id}에 대한 매칭 PnL 정보를 찾을 수 없습니다.")
+                
+                # 업데이트 요약 로그
+                logger.info(f"{symbol}: 총 {len(trades)}개 중 {len(updated_trade_ids)}개 거래의 PnL 정보 업데이트 완료")
                 
                 # API 요청 간 간격
-                time.sleep(0.3)
-            
-            return {
-                "status": "success",
-                "count": update_count,
-                "message": f"{update_count}개 거래의 PnL 정보 업데이트 완료"
-            }
+                time.sleep(0.5)
             
         except Exception as e:
-            logger.exception(f"NULL PnL 업데이트 중 오류 발생: {e}")
-            return {"status": "error", "message": str(e)}
-
+            import traceback
+            logger.error(f"PnL 정보 업데이트 중 오류 발생: {e}")
+            logger.error(traceback.format_exc())
 
     def _handle_trend_touch(self, trader, event_id, symbol, request_data):
         """추세선 터치 처리 (추세선 터치로 인한 청산)"""

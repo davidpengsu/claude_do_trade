@@ -192,20 +192,31 @@ def positions():
             "message": f"포지션 조회 중 오류 발생: {str(e)}"
         }), 500
     
-@app.route('/update-missing-pnl', methods=['POST'])
-def update_missing_pnl():
+@app.route('/update-pnl', methods=['POST'])
+def update_pnl():
     """
-    NULL PnL 정보 업데이트 엔드포인트
+    PnL 정보 업데이트 엔드포인트
+    FILLED 상태이지만 PnL이 NULL인 거래들을 찾아서 업데이트
     """
     try:
-        # API 키 검증 (생략)
+        # API 키 검증
+        api_key = request.headers.get('X-API-Key')
+        if trade_settings.get("require_api_key", False):
+            expected_api_key = trade_settings.get("api_key", "")
+            if not api_key or api_key != expected_api_key:
+                logger.warning(f"유효하지 않은 API 키: {request.remote_addr}")
+                return jsonify({"status": "error", "message": "유효하지 않은 API 키"}), 401
         
-        # NULL PnL 업데이트 실행
-        result = exec_manager.update_missing_pnl()
-        return jsonify(result)
+        # PnL 업데이트 실행
+        exec_manager._update_trade_pnl()
+        
+        return jsonify({
+            "status": "success",
+            "message": "PnL 업데이트 작업이 시작되었습니다"
+        })
         
     except Exception as e:
-        logger.exception(f"NULL PnL 업데이트 중 오류 발생: {e}")
+        logger.exception(f"PnL 업데이트 중 오류 발생: {e}")
         return jsonify({
             "status": "error",
             "message": f"오류 발생: {str(e)}"

@@ -3,8 +3,8 @@
     "position_size_percent": 10.0,
     "position_size_fixed": 30.0,
     "leverage": 5,
-    "tp_percent": 3.0,
-    "sl_percent": 1.5,
+    "tp_percent": 0.6,
+    "sl_percent": 0.3,
     "require_api_key": false,
     "api_key": "your-execution-server-api-key"
   }
