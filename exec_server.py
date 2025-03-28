@@ -94,13 +94,7 @@ def execute():
                 "message": "open_position 액션에는 position_type이 필요합니다"
             }), 400
         
-        # trend_touch 액션인 경우 ai_decision 필드 필요
-        if action == "trend_touch" and "ai_decision" not in request_data:
-            logger.error("trend_touch 액션에는 ai_decision이 필요합니다")
-            return jsonify({
-                "status": "error", 
-                "message": "trend_touch 액션에는 ai_decision이 필요합니다"
-            }), 400
+        
         
         # 심볼 형식 검증 (USDT 페어 확인)
         symbol = request_data.get("symbol", "")

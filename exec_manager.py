@@ -98,8 +98,6 @@ class ExecManager:
                 result = self._handle_open_position(trader, event_id, symbol, position_type, request_data)
             elif action == "close_position":
                 result = self._handle_close_position(trader, event_id, symbol, request_data)
-            # elif action == "trend_touch":
-            #     result = self._handle_trend_touch(trader, event_id, symbol, request_data)
             else:
                 return self._handle_error(event_id, f"지원하지 않는 액션: {action}")
             
@@ -494,82 +492,6 @@ class ExecManager:
             import traceback
             logger.error(f"PnL 정보 업데이트 중 오류 발생: {e}")
             logger.error(traceback.format_exc())
-
-    # def _handle_trend_touch(self, trader, event_id, symbol, request_data):
-    #     """추세선 터치 처리 (추세선 터치로 인한 청산)"""
-    #     logger.info(f"{symbol} 추세선 터치 요청 처리")
-        
-    #     try:
-    #         # 현재 포지션 확인
-    #         current_position = trader.get_current_position()
-            
-    #         if not current_position:
-    #             return {
-    #                 "status": "SKIPPED",
-    #                 "message": f"{symbol} 활성 포지션이 없습니다."
-    #             }
-            
-    #         # AI 결정이 청산(yes)인 경우만 처리
-    #         ai_decision = request_data.get("ai_decision", {})
-    #         if ai_decision.get("Answer", "").lower() != "yes":
-    #             return {
-    #                 "status": "SKIPPED",
-    #                 "message": f"AI 결정이 청산이 아닙니다: {ai_decision.get('Answer')}"
-    #             }
-            
-    #         # 포지션 청산
-    #         close_result = trader.close_position()
-            
-    #         if not close_result["success"]:
-    #             return {
-    #                 "status": "FAILED",
-    #                 "message": f"포지션 청산 실패: {close_result['message']}"
-    #             }
-            
-    #         # 거래 기록
-    #         trade_id = str(uuid.uuid4())
-    #         self.db_manager.log_trade({
-    #             "tradeId": trade_id,
-    #             "eventId": event_id,
-    #             "symbol": symbol,
-    #             "orderType": "MARKET",
-    #             "side": "Sell" if current_position["position_type"] == "long" else "Buy",
-    #             "positionType": current_position["position_type"],
-    #             "quantity": current_position["size"],
-    #             "price": close_result["price"],
-    #             "leverage": current_position["leverage"],
-    #             "orderStatus": TRADE_STATUS_FILLED,
-    #             "bybitOrderId": close_result.get("order_id"),
-    #             "additionalInfo": json.dumps({"reason": "trend_touch", "ai_decision": ai_decision}),
-    #             "executionTime": datetime.now()
-    #         })
-            
-    #         # PnL 정보 지연 업데이트를 위한 타이머 시작
-    #         threading.Timer(30.0, lambda: self._update_trade_pnl(trade_id, symbol, close_result.get("order_id"))).start()
-    #         logger.info(f"PnL 정보 지연 업데이트 예약됨 (30초 후): {trade_id}")
-
-    #         # 기존 거래 상태 업데이트
-    #         try:
-    #             # 해당 거래 상태 업데이트
-    #             with self.db_manager.conn.cursor() as cursor:
-    #                 cursor.execute("UPDATE trades SET orderStatus = %s WHERE symbol = %s AND positionType = %s AND orderStatus = %s", 
-    #                              [TRADE_STATUS_CLOSED, symbol, current_position["position_type"], TRADE_STATUS_OPEN])
-    #                 self.db_manager.conn.commit()
-    #         except Exception as e:
-    #             logger.warning(f"거래 상태 업데이트 중 오류 발생: {e}")
-            
-    #         return {
-    #             "status": "SUCCESS",
-    #             "message": f"{symbol} {current_position['position_type']} 포지션 청산 성공 (추세선 터치)",
-    #             "details": close_result
-    #         }
-            
-    #     except Exception as e:
-    #         logger.exception(f"{symbol} 추세선 터치 실행 중 오류 발생: {e}")
-    #         return {
-    #             "status": "FAILED",
-    #             "message": f"추세선 터치 처리 중 오류 발생: {str(e)}"
-    #         }
     
     def _handle_error(self, event_id, error_message):
         """에러 처리 및 로깅"""
