@@ -157,8 +157,6 @@ def show_status():
     logger.info(f"레버리지: {trade_settings.get('leverage', 5)}x")
     logger.info(f"포지션 크기: {trade_settings.get('position_size_mode', 'percent')} "
                f"({trade_settings.get('position_size_percent', 10.0) if trade_settings.get('position_size_mode') == 'percent' else trade_settings.get('position_size_fixed', 100.0)})")
-    logger.info(f"익절: {trade_settings.get('tp_percent', 3.0)}%")
-    logger.info(f"손절: {trade_settings.get('sl_percent', 1.5)}%")
     logger.info(f"API 키 요구: {trade_settings.get('require_api_key', True)}")
     logger.info(f"DB 호스트: {db_config.get('host', 'localhost')}")
     logger.info("=" * 50)
