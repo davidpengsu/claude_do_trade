@@ -407,60 +407,7 @@ class BybitClient:
         except Exception as e:
             self.logger.error(f"{symbol} 주문 취소 중 오류 발생: {e}")
             return False
-    
-    def set_tp_sl(self, symbol: str, tp_price: float, sl_price: float) -> bool:
-        """
-        TP/SL 설정
-        
-        Args:
-            symbol: 심볼 (예: "BTCUSDT")
-            tp_price: 익절 가격
-            sl_price: 손절 가격
-            
-        Returns:
-            성공 여부
-        """
-        # 현재 포지션 조회
-        position = self.get_positions(symbol)
-        
-        if not position.get("exists", False):
-            self.logger.warning(f"{symbol} 포지션이 없어 TP/SL을 설정할 수 없습니다.")
-            return False
-        
-        # 가격 소수점 자릿수 계산
-        symbol_info = self.get_symbol_info(symbol)
-        tick_size = symbol_info.get("tick_size")
-        
-        # 소수점 자릿수 계산
-        decimal_places = self._get_decimal_places(tick_size)
-        
-        # 가격 반올림
-        tp_price = self._round_to_tick(tp_price, tick_size, decimal_places)
-        sl_price = self._round_to_tick(sl_price, tick_size, decimal_places)
-        
-        params = {
-            "category": "linear",
-            "symbol": symbol,
-            "takeProfit": str(tp_price),
-            "stopLoss": str(sl_price),
-            "positionIdx": 0,  # 단일 포지션 모드
-            "tpTriggerBy": "LastPrice",
-            "slTriggerBy": "LastPrice",
-            "tpslMode": "Full"  # Full: 전체 포지션에 적용
-        }
-        
-        try:
-            result = self._send_post_request("/v5/position/trading-stop", params)
-            
-            if result.get("retCode") == 0:
-                self.logger.info(f"{symbol} TP({tp_price})/SL({sl_price}) 설정 성공")
-                return True
-            else:
-                self.logger.error(f"{symbol} TP/SL 설정 실패: {result}")
-                return False
-        except Exception as e:
-            self.logger.error(f"{symbol} TP/SL 설정 중 오류 발생: {e}")
-            return False
+ 
     
     def get_account_balance(self, coin: str = "USDT") -> Dict[str, float]:
         """

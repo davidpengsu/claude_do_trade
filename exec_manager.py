@@ -188,7 +188,7 @@ class ExecManager:
                 }
         
             
-            # 이 부분을 수정 (tp_sl_result 삭제)
+            
             trade_id = str(uuid.uuid4())
 
             # 웹훅에서 전달받은 TP/SL 값이 있다면 사용
