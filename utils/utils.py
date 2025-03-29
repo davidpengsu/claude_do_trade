@@ -34,27 +34,7 @@ def get_decimal_places(value: float) -> int:
         return len(str_value.split('.')[1])
     return 0
 
-def calculate_tp_sl(entry_price: float, position_type: str, tp_percent: float, sl_percent: float) -> Tuple[float, float]:
-    """
-    진입 가격을 기준으로 TP/SL 가격 계산
-    
-    Args:
-        entry_price: 진입 가격
-        position_type: 포지션 타입 ("long" 또는 "short")
-        tp_percent: TP 퍼센트
-        sl_percent: SL 퍼센트
-        
-    Returns:
-        (TP 가격, SL 가격) 튜플
-    """
-    if position_type.lower() == "long":
-        tp_price = entry_price * (1 + tp_percent / 100)
-        sl_price = entry_price * (1 - sl_percent / 100)
-    else:  # short
-        tp_price = entry_price * (1 - tp_percent / 100)
-        sl_price = entry_price * (1 + sl_percent / 100)
-    
-    return tp_price, sl_price
+
 
 def calculate_pnl(entry_price: float, exit_price: float, position_type: str, size: float, leverage: int) -> float:
     """

@@ -176,13 +176,11 @@ class ConfigLoader:
         
         # 거래 설정
         trade_settings = {
-            "position_size_mode": "percent",  # "percent" 또는 "fixed"
+            "position_size_mode": "fixed",  # "percent" 또는 "fixed"
             "position_size_percent": 10.0,    # 기본적으로 계좌 잔고의 10% 사용
-            "position_size_fixed": 100.0,     # 고정 금액 (USDT)
+            "position_size_fixed": 40.0,     # 고정 금액 (USDT)
             "leverage": 5,                    # 기본 레버리지 5배
-            "tp_percent": 3.0,                # 3% 익절
-            "sl_percent": 1.5,                # 1.5% 손절
-            "require_api_key": True,          # API 키 요구 여부
+            "require_api_key": False,          # API 키 요구 여부
             "api_key": "your-execution-server-api-key"  # 실행 서버 API 키
         }
         self.save_config("trade_settings.json", trade_settings)
